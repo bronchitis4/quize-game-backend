@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import GameState from './interfaces/game-state.interface';
 import Player from './interfaces/player.interface';
 import { v4 as uuid } from 'uuid';
+import { Category } from './interfaces/question.interface';
 
 @Injectable()
 export class GameService {
@@ -22,39 +23,25 @@ export class GameService {
             roomId,
             status: 'LOBBY',
             players: [newPlayer],
-            password: password
+            password: password,
+            package: { categories: [] }
         };
 
         this.games.set(roomId, newGame);
-        console.log("GAME created:", this.games);
         this.players.set(playerId, newPlayer);
-        console.log("GAMES:", this.games);
         return { gameState: newGame, gameId: roomId };
     }
 
     joinGame(gameId: string, playerId: string, playerName: string, avatarUrl: string, password: string): GameState | null {
-        console.log('\n>>> JOIN_GAME SERVICE called');
-        console.log('Looking for gameId:', gameId);
-        console.log('Total games stored:', this.games.size);
-        
         const game = this.games.get(gameId);
-        
+
         if (!game) {
-            console.error('✗ Game not found for gameId:', gameId);
-            console.log('Available games:', Array.from(this.games.keys()));
             return null;
         }
-        
-        console.log('✓ Game found');
-        console.log('Game password:', game.password);
-        console.log('Provided password:', password);
-        
+
         if (game.password !== password) {
-            console.error('✗ Password mismatch');
             return null;
         }
-        
-        console.log('✓ Password correct');
 
         const newPlayer: Player = {
             id: playerId,
@@ -66,12 +53,42 @@ export class GameService {
         }
         game.players.push(newPlayer);
         this.players.set(playerId, newPlayer);
-        
-        console.log('✓ Player added, total players:', game.players.length);
-        console.log('>>> JOIN_GAME SERVICE completed\n');
-        
+
         return game;
     }
 
+    getGameState(gameId: string): GameState | null {
+        return this.games.get(gameId) || null;
+    }
+
+    handleDisconnect(playerId: string): GameState | null {
+        this.players.delete(playerId);
+
+        let disconnectedGame: GameState | null = null;
+
+        this.games.forEach((game, gameId) => {
+            const playerIndex = game.players.findIndex(p => p.id === playerId);
+            if (playerIndex !== -1) {
+                game.players.splice(playerIndex, 1);
+                disconnectedGame = game;
+
+                if (game.players.length === 0) {
+                    this.games.delete(gameId);
+                }
+            }
+        });
+
+        return disconnectedGame;
+    }
+
+    loadPackage(gameId: string, packageData: any): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        game.package = { 
+            categories: Array.isArray(packageData) ? packageData : []
+        };
+        return game;
+    }
 }
 
