@@ -22,6 +22,11 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket) {
     console.log(`Client disconnected: ${client.id}`);
+    const disconnectedGame = this.gameService.handleDisconnect(client.id);
+    
+    if (disconnectedGame) {
+      this.server.to(disconnectedGame.roomId).emit('state_update', disconnectedGame);
+    }
   }
 
   @SubscribeMessage('echo')
@@ -61,6 +66,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+
+
   @SubscribeMessage('join_game')
   joinGame(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, playerName: string, avatarUrl: string, password: string }) {
     try {
@@ -92,6 +99,27 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
       
       return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('load_package')
+  loadPackage(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, package: any[] }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+      const gameState = this.gameService.loadPackage(payload.gameId, payload.package);
+
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+      client.emit('gameState', gameState);
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true, gameState };
     } catch (error) {
       client.emit('error', { message: error.message });
     }
