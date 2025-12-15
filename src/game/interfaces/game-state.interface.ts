@@ -9,8 +9,8 @@ interface GameState {
     package: GameData;
     selectionQueue: string[];
     currentSelector?: string;
-    answerQueue: string[];
-    currentAnswerer?: string;
+    currentAnswerer: string[];
+    bannedAnswerers: string[]; // Players who answered incorrectly
     currentQuestion?: {
         categoryIndex: number;
         questionIndex: number;
