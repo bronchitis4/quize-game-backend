@@ -24,7 +24,10 @@ export class GameService {
             status: 'LOBBY',
             players: [newPlayer],
             password: password,
-            package: { categories: [] }
+            package: { categories: [] },
+            selectionQueue: [],
+            currentSelector: undefined,
+            answerQueue: []
         };
 
         this.games.set(roomId, newGame);
@@ -53,6 +56,12 @@ export class GameService {
         }
         game.players.push(newPlayer);
         this.players.set(playerId, newPlayer);
+
+        game.selectionQueue.push(playerId);
+        
+        if (!game.currentSelector) {
+            game.currentSelector = playerId;
+        }
 
         return game;
     }
@@ -88,6 +97,135 @@ export class GameService {
         game.package = { 
             categories: Array.isArray(packageData) ? packageData : []
         };
+        return game;
+    }
+
+    selectQuestion(gameId: string, categoryIndex: number, questionIndex: number): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        const category = game.package.categories[categoryIndex];
+        if (!category) return null;
+        
+        const question = category.questions[questionIndex];
+        if (!question) return null;
+        
+        game.status = 'QUESTION_ACTIVE';
+        game.currentQuestion = {
+            categoryIndex,
+            questionIndex,
+            question
+        };
+        
+        return game;
+    }
+
+    startGame(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        if (game.status !== 'LOBBY') return null;
+        
+        game.status = 'PLAYING';
+        
+        if (game.selectionQueue.length > 0 && !game.currentSelector) {
+            game.currentSelector = game.selectionQueue[0];
+        }
+        
+        return game;
+    }
+
+    addToAnswerQueue(gameId: string, playerId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game || game.status !== 'QUESTION_ACTIVE') return null;
+        
+        if (!game.answerQueue.includes(playerId)) {
+            game.answerQueue.push(playerId);
+        }
+        
+        if (!game.currentAnswerer && game.answerQueue.length > 0) {
+            game.currentAnswerer = game.answerQueue[0];
+        }
+        
+        return game;
+    }
+
+    nextAnswerer(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        if (game.answerQueue.length > 0) {
+            game.answerQueue.shift();
+        }
+        
+        game.currentAnswerer = game.answerQueue[0];
+        
+        return game;
+    }
+
+    minusScore(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+
+        const player = game.players.find(p => p.id === game.currentSelector);
+        if (!player) return null;
+        player.score -= game.currentQuestion ? game.currentQuestion.question.points : 0;
+        return game;
+    }
+
+    addScore(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        const player = game.players.find(p => p.id === game.currentSelector);
+        if (!player) return null;
+        player.score += game.currentQuestion ? game.currentQuestion.question.points : 0;
+        return game;
+    }
+
+    nextSelector(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        if (game.selectionQueue.length > 0) {
+            const current = game.selectionQueue.shift();
+            if (current) {
+                game.selectionQueue.push(current);
+            }
+        }
+        
+        game.currentSelector = game.selectionQueue[0];
+        game.status = 'PLAYING';
+        
+        this.clearAnswerQueue(gameId);
+        
+        return game;
+    }
+
+    clearAnswerQueue(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        game.answerQueue = [];
+        game.currentAnswerer = undefined;
+        game.currentQuestion = undefined;
+        
+        return game;
+    }
+
+    activateQuestion(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        game.status = 'QUESTION_ACTIVE';
+        
+        if (game.currentSelector) {
+            game.answerQueue = [game.currentSelector];
+            game.currentAnswerer = game.currentSelector;
+        } else {
+            game.answerQueue = [];
+            game.currentAnswerer = undefined;
+        }
+        
         return game;
     }
 }
