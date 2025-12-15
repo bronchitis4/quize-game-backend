@@ -104,6 +104,31 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('select_question')
+  selectQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, categoryIndex: number, questionIndex: number }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+      const gameState = this.gameService.selectQuestion(
+        payload.gameId,
+        payload.categoryIndex,
+        payload.questionIndex,
+      );
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+      client.emit('gameState', gameState);
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true, gameState };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    } 
+  }
+  
+
   @SubscribeMessage('load_package')
   loadPackage(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, package: any[] }) {
     try {
@@ -120,6 +145,146 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('gameState', gameState);
       this.server.to(payload.gameId).emit('state_update', gameState);
       return { success: true, gameState };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('start_game')
+  startGame(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.startGame(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('error', { message: 'Cannot start game' });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('game_started', gameState);
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('activate_question')
+  activateQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.activateQuestion(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('buzz_in')
+  buzzIn(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.addToAnswerQueue(payload.gameId, client.id);
+      
+      if (!gameState) {
+        client.emit('error', { message: 'Cannot buzz in' });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('queue_updated', {
+        answerQueue: gameState.answerQueue,
+        currentAnswerer: gameState.currentAnswerer
+      });
+      
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('wrong_answer')
+  wrongAnswer(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      this.gameService.minusScore(payload.gameId);
+      const gameState = this.gameService.nextAnswerer(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('correct_answer')
+  correctAnswer(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      this.gameService.addScore(payload.gameId);
+      const gameState = this.gameService.nextSelector(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('clear_queue')
+  clearQueue(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.clearAnswerQueue(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
     }
