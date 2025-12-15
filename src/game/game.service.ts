@@ -27,7 +27,8 @@ export class GameService {
             package: { categories: [] },
             selectionQueue: [],
             currentSelector: undefined,
-            answerQueue: []
+            currentAnswerer: [],
+            bannedAnswerers: []
         };
 
         this.games.set(roomId, newGame);
@@ -61,6 +62,7 @@ export class GameService {
         
         if (!game.currentSelector) {
             game.currentSelector = playerId;
+            game.currentAnswerer.push(playerId);
         }
 
         return game;
@@ -130,35 +132,39 @@ export class GameService {
         
         if (game.selectionQueue.length > 0 && !game.currentSelector) {
             game.currentSelector = game.selectionQueue[0];
+            game.currentAnswerer.push(game.selectionQueue[0]);
         }
         
         return game;
     }
 
-    addToAnswerQueue(gameId: string, playerId: string): GameState | null {
+    buzzIn(gameId: string, playerId: string): GameState | null {
         const game = this.games.get(gameId);
         if (!game || game.status !== 'QUESTION_ACTIVE') return null;
         
-        if (!game.answerQueue.includes(playerId)) {
-            game.answerQueue.push(playerId);
+        if (game.bannedAnswerers.includes(playerId)) {
+            return game;
         }
         
-        if (!game.currentAnswerer && game.answerQueue.length > 0) {
-            game.currentAnswerer = game.answerQueue[0];
+        if (game.currentAnswerer.length === 0) {
+            game.currentAnswerer.push(playerId);
         }
         
         return game;
     }
 
-    nextAnswerer(gameId: string): GameState | null {
+    wrongAnswer(gameId: string): GameState | null {
         const game = this.games.get(gameId);
-        if (!game) return null;
+        if (!game || game.status !== 'QUESTION_ACTIVE') return null;
         
-        if (game.answerQueue.length > 0) {
-            game.answerQueue.shift();
+        if (game.currentAnswerer.length > 0) {
+            const answerer = game.currentAnswerer[0];
+            if (!game.bannedAnswerers.includes(answerer)) {
+                game.bannedAnswerers.push(answerer);
+            }
         }
         
-        game.currentAnswerer = game.answerQueue[0];
+        game.currentAnswerer = [];
         
         return game;
     }
@@ -167,7 +173,7 @@ export class GameService {
         const game = this.games.get(gameId);
         if (!game) return null;
 
-        const player = game.players.find(p => p.id === game.currentSelector);
+        const player = game.players.find(p => p.id === game.currentAnswerer[0]);
         if (!player) return null;
         player.score -= game.currentQuestion ? game.currentQuestion.question.points : 0;
         return game;
@@ -176,7 +182,7 @@ export class GameService {
     addScore(gameId: string): GameState | null {
         const game = this.games.get(gameId);
         if (!game) return null;
-        const player = game.players.find(p => p.id === game.currentSelector);
+        const player = game.players.find(p => p.id === game.currentAnswerer[0]);
         if (!player) return null;
         player.score += game.currentQuestion ? game.currentQuestion.question.points : 0;
         return game;
@@ -186,27 +192,50 @@ export class GameService {
         const game = this.games.get(gameId);
         if (!game) return null;
         
+        if (game.currentQuestion) {
+            const { categoryIndex, questionIndex } = game.currentQuestion;
+            const category = game.package.categories[categoryIndex];
+            if (category && category.questions[questionIndex]) {
+                category.questions.splice(questionIndex, 1);
+            }
+        }
+
+        // If no questions remain, finish the game
+        const hasQuestions = game.package.categories.some(cat => Array.isArray(cat.questions) && cat.questions.length > 0);
+        if (!hasQuestions) {
+            game.status = 'FINISHED';
+            this.clearQuestion(gameId);
+            game.currentSelector = undefined;
+            return game;
+        }
+
         if (game.selectionQueue.length > 0) {
             const current = game.selectionQueue.shift();
             if (current) {
                 game.selectionQueue.push(current);
             }
         }
-        
+
         game.currentSelector = game.selectionQueue[0];
+        
+        this.clearQuestion(gameId);
+
+        // Set currentAnswerer after clearing (if needed)
+        if (game.currentSelector) {
+            game.currentAnswerer.push(game.currentSelector);
+        }
+
         game.status = 'PLAYING';
-        
-        this.clearAnswerQueue(gameId);
-        
+
         return game;
     }
 
-    clearAnswerQueue(gameId: string): GameState | null {
+    clearQuestion(gameId: string): GameState | null {
         const game = this.games.get(gameId);
         if (!game) return null;
         
-        game.answerQueue = [];
-        game.currentAnswerer = undefined;
+        game.bannedAnswerers = [];
+        game.currentAnswerer = [];
         game.currentQuestion = undefined;
         
         return game;
@@ -217,16 +246,18 @@ export class GameService {
         if (!game) return null;
         
         game.status = 'QUESTION_ACTIVE';
-        
-        if (game.currentSelector) {
-            game.answerQueue = [game.currentSelector];
-            game.currentAnswerer = game.currentSelector;
-        } else {
-            game.answerQueue = [];
-            game.currentAnswerer = undefined;
-        }
+        game.bannedAnswerers = [];
+        game.currentAnswerer = [];
         
         return game;
+    }
+
+    skipQuestion(gameId: string): GameState | null {
+        const game = this.games.get(gameId);
+        if (!game) return null;
+        
+        // Rotate to next selector
+        return this.nextSelector(gameId);
     }
 }
 

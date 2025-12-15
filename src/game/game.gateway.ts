@@ -203,17 +203,18 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const gameState = this.gameService.addToAnswerQueue(payload.gameId, client.id);
+      const gameState = this.gameService.buzzIn(payload.gameId, client.id);
       
       if (!gameState) {
         client.emit('error', { message: 'Cannot buzz in' });
         return;
       }
 
-      this.server.to(payload.gameId).emit('queue_updated', {
-        answerQueue: gameState.answerQueue,
-        currentAnswerer: gameState.currentAnswerer
-      });
+      console.log('buzz_in - Sending state:', JSON.stringify({
+        currentAnswerer: gameState.currentAnswerer,
+        bannedAnswerers: gameState.bannedAnswerers,
+        status: gameState.status
+      }));
       
       this.server.to(payload.gameId).emit('state_update', gameState);
       return { success: true };
@@ -231,7 +232,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       this.gameService.minusScore(payload.gameId);
-      const gameState = this.gameService.nextAnswerer(payload.gameId);
+      const gameState = this.gameService.wrongAnswer(payload.gameId);
       
       if (!gameState) {
         client.emit('game_not_found', { gameId: payload.gameId });
@@ -268,6 +269,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('skip_question')
+  skipQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.skipQuestion(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', gameState);
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
   @SubscribeMessage('clear_queue')
   clearQueue(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
     try {
@@ -276,7 +299,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const gameState = this.gameService.clearAnswerQueue(payload.gameId);
+      const gameState = this.gameService.clearQuestion(payload.gameId);
       
       if (!gameState) {
         client.emit('game_not_found', { gameId: payload.gameId });
