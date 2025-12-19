@@ -50,17 +50,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('echo', { received: payload, timestamp: new Date() });
     return { success: true };
   }
-
-  @SubscribeMessage('get_avatar')
-  getAvatar(@ConnectedSocket() client: Socket, @MessageBody() payload: { avatarId: string }) {
-    try {
-      const avatarUrl = this.gameService.getAvatarUrl(payload.avatarId);
-      client.emit('avatar_data', { avatarId: payload.avatarId, avatarUrl });
-      return { success: true };
-    } catch (error) {
-      client.emit('error', { message: error.message });
-    }
-  }
  
   @SubscribeMessage('create_game')
   createGame(@ConnectedSocket() client: Socket, @MessageBody() payload:any) {
