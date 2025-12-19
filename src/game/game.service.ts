@@ -8,13 +8,33 @@ import { Category } from './interfaces/question.interface';
 export class GameService {
     private games: Map<string, GameState> = new Map();
     private players = new Map<string, Player>();
+    private avatarCache = new Map<string, string>();
+
+    private processAvatarUrl(avatarUrl: string): string {
+        if (!avatarUrl) return '';
+        
+        // If it's a data URL or very long URL
+        if (avatarUrl.startsWith('data:') || avatarUrl.length > 200) {
+            // Create hash from URL
+            const hash = 'avatar_' + Math.random().toString(36).substring(2, 15);
+            this.avatarCache.set(hash, avatarUrl);
+            return hash;
+        }
+        
+        return avatarUrl;
+    }
+
+    getAvatarUrl(avatarId: string): string | undefined {
+        return this.avatarCache.get(avatarId) || avatarId;
+    }
 
     createGame(playerId: string, playerName: string, avatarUrl: string, password: string): { gameState: GameState, gameId: string } {
         const roomId = uuid();
+        const processedAvatar = this.processAvatarUrl(avatarUrl);
         const newPlayer: Player = {
             id: playerId,
             name: playerName,
-            avatarUrl,
+            avatarUrl: processedAvatar,
             score: 0,
             isReady: false,
             isHost: true,
@@ -47,11 +67,12 @@ export class GameService {
             return null;
         }
 
+        const processedAvatar = this.processAvatarUrl(avatarUrl);
         const newPlayer: Player = {
             id: playerId,
             name: playerName,
             score: 0,
-            avatarUrl,
+            avatarUrl: processedAvatar,
             isReady: false,
             isHost: false,
         }

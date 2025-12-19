@@ -16,6 +16,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private gameService: GameService) {}
 
+  private formatGameStateForClients(gameState: any): any {
+    if (!gameState) return gameState;
+
+    return {
+      ...gameState,
+      package: {
+        categories: gameState.package?.categories?.map(category => ({
+          name: category.name,
+          questions: category.questions?.map(q => ({
+            points: q.points
+          })) || []
+        })) || []
+      }
+    };
+  }
+
   handleConnection(client: any, ...args: any[]) {
     console.log(`Client connected: ${client.id}`);
   }
@@ -25,7 +41,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const disconnectedGame = this.gameService.handleDisconnect(client.id);
     
     if (disconnectedGame) {
-      this.server.to(disconnectedGame.roomId).emit('state_update', disconnectedGame);
+      this.server.to(disconnectedGame.roomId).emit('state_update', this.formatGameStateForClients(disconnectedGame));
     }
   }
 
@@ -33,6 +49,17 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   echo(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
     client.emit('echo', { received: payload, timestamp: new Date() });
     return { success: true };
+  }
+
+  @SubscribeMessage('get_avatar')
+  getAvatar(@ConnectedSocket() client: Socket, @MessageBody() payload: { avatarId: string }) {
+    try {
+      const avatarUrl = this.gameService.getAvatarUrl(payload.avatarId);
+      client.emit('avatar_data', { avatarId: payload.avatarId, avatarUrl });
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
   }
  
   @SubscribeMessage('create_game')
@@ -51,14 +78,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
       
       client.join(gameId);
-      client.emit('game_created', gameState);
-      client.emit('gameState', gameState);  
-      
-      this.server.sockets.sockets.forEach((socket) => {
-        if (socket.rooms.has(gameId)) {
-          socket.emit('gameState', gameState);
-        }
-      });
+      this.server.to(gameId).emit('state_update', this.formatGameStateForClients(gameState));
       
       return { success: true, gameState };
     } catch (error) {
@@ -69,7 +89,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
 
   @SubscribeMessage('join_game')
-  joinGame(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, playerName: string, avatarUrl: string, password: string }) {
+  joinGame(@ConnectedSocket() client: Socket, @MessageBody() payload: { 
+    gameId: string, playerName: string, avatarUrl: string, password: string 
+  }) {
     try {
       if (!payload || !payload.gameId) {
         client.emit('error', { message: 'gameId required' });
@@ -90,13 +112,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       client.join(payload.gameId);
-      client.emit('game_joined', { gameState });
-      
-      this.server.sockets.sockets.forEach((socket) => {
-        if (socket.rooms.has(payload.gameId)) {
-          socket.emit('state_update', gameState);
-        }
-      });
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       
       return { success: true };
     } catch (error) {
@@ -105,7 +121,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('select_question')
-  selectQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string, categoryIndex: number, questionIndex: number }) {
+  selectQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: {
+    gameId: string, categoryIndex: number, questionIndex: number 
+  }) {
     try {
       if (!payload || !payload.gameId) {
         client.emit('error', { message: 'gameId required' });
@@ -120,8 +138,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('game_not_found', { gameId: payload.gameId });
         return;
       }
-      client.emit('gameState', gameState);
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true, gameState };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -142,8 +159,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('game_not_found', { gameId: payload.gameId });
         return;
       }
-      client.emit('gameState', gameState);
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true, gameState };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -165,8 +181,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('game_started', gameState);
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -188,7 +203,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -209,14 +224,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('error', { message: 'Cannot buzz in' });
         return;
       }
-
-      console.log('buzz_in - Sending state:', JSON.stringify({
-        currentAnswerer: gameState.currentAnswerer,
-        bannedAnswerers: gameState.bannedAnswerers,
-        status: gameState.status
-      }));
       
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -239,7 +248,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -262,7 +271,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -284,7 +293,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
@@ -306,7 +315,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.server.to(payload.gameId).emit('state_update', gameState);
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
       return { success: true };
     } catch (error) {
       client.emit('error', { message: error.message });
