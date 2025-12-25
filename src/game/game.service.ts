@@ -185,6 +185,7 @@ export class GameService {
         const player = game.players.find(p => p.id === game.currentAnswerer[0]);
         if (!player) return null;
         player.score += game.currentQuestion ? game.currentQuestion.question.points : 0;
+        game.status = 'ANSWER';
         return game;
     }
 
@@ -256,8 +257,8 @@ export class GameService {
         const game = this.games.get(gameId);
         if (!game) return null;
         
-        // Rotate to next selector
-        return this.nextSelector(gameId);
+        game.status = 'ANSWER';
+        return game;
     }
 }
 

@@ -4,7 +4,7 @@ import { GameData, Question } from './question.interface';
 interface GameState {
     roomId: string;
     password?: string;
-    status: 'LOBBY' | 'PLAYING' | 'QUESTION_ACTIVE' | 'FINISHED';
+    status: 'LOBBY' | 'PLAYING' | 'QUESTION_ACTIVE' | 'ANSWER' | 'FINISHED';
     players: Player[];
     package: GameData;
     selectionQueue: string[];

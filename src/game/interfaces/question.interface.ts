@@ -1,62 +1,87 @@
 /**
- * Інтерфейс для окремого Питання
+ * Interface for individual Question
  */
 export interface Question {
   /**
-   * Текстова версія питання
+   * Text version of the question
    */
   text: string;
 
   /**
-   * Кількість балів за питання.
+   * Points awarded for the question
    */
   points: number;
 
   /**
-   * Тип вмісту питання.
-   * - 'text': Питання є простим текстом.
-   * - 'image': Питання містить посилання на зображення.
-   * - 'video': Питання містить посилання на відео.
+   * Content type of the question
+   * - 'text': Question is plain text
+   * - 'image': Question contains an image URL
+   * - 'video': Question contains a video URL
+   * - 'audio': Question contains an audio URL
    */
-  type: 'text' | 'image' | 'video';
+  type: 'text' | 'image' | 'video' | 'audio';
 
   /**
-   * Вміст питання. Це може бути текст, URL-адреса зображення або ID/URL відео.
+   * Question content. Can be text, image URL, or video ID/URL
    */
   content: string;
 
   /**
-   * Необов'язкова підказка до питання (наприклад, для шифрованих мемів).
+   * Optional hint for the question (e.g., for encrypted memes)
    */
   hint?: string;
 
   /**
-   * Правильна відповідь на питання.
+   * Correct answer to the question
    */
-  answer: string;
+  answer: {
+    /**
+     * Answer type
+     * - 'text': Answer is plain text
+     * - 'image': Answer contains an image URL
+     * - 'video': Answer contains a video URL
+     * - 'audio': Answer contains an audio URL
+     */
+    type: 'text' | 'image' | 'video' | 'audio';
+    
+    /**
+     * Answer content. Can be text, image URL, or video ID/URL
+     */
+    content: string;
+    
+    /**
+     * Text version of the answer
+     */
+    text: string;
+    
+    /**
+     * Optional background music URL for the answer
+     */
+    backgroundMusic?: string;
+  };
 }
 
 /**
- * Інтерфейс для Категорії
+ * Interface for Category
  */
 export interface Category {
   /**
-   * Назва (заголовок) категорії.
+   * Category name (title)
    */
   title: string;
 
   /**
-   * Масив питань, що належать до цієї категорії.
+   * Array of questions belonging to this category
    */
   questions: Question[];
 }
 
 /**
- * Основний інтерфейс для структури всієї гри
+ * Main interface for the entire game structure
  */
 export interface GameData {
   /**
-   * Масив усіх категорій гри.
+   * Array of all game categories
    */
   categories: Category[];
 }
