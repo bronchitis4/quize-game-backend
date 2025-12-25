@@ -23,7 +23,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       ...gameState,
       package: {
         categories: gameState.package?.categories?.map(category => ({
-          name: category.name,
+          title: category.title,
           questions: category.questions?.map(q => ({
             points: q.points
           })) || []
@@ -252,8 +252,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      this.gameService.addScore(payload.gameId);
-      const gameState = this.gameService.nextSelector(payload.gameId);
+      const gameState = this.gameService.addScore(payload.gameId);
       
       if (!gameState) {
         client.emit('game_not_found', { gameId: payload.gameId });
@@ -298,6 +297,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       const gameState = this.gameService.clearQuestion(payload.gameId);
+      
+      if (!gameState) {
+        client.emit('game_not_found', { gameId: payload.gameId });
+        return;
+      }
+
+      this.server.to(payload.gameId).emit('state_update', this.formatGameStateForClients(gameState));
+      return { success: true };
+    } catch (error) {
+      client.emit('error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('next_question')
+  nextQuestion(@ConnectedSocket() client: Socket, @MessageBody() payload: { gameId: string }) {
+    try {
+      if (!payload || !payload.gameId) {
+        client.emit('error', { message: 'gameId required' });
+        return;
+      }
+
+      const gameState = this.gameService.nextSelector(payload.gameId);
       
       if (!gameState) {
         client.emit('game_not_found', { gameId: payload.gameId });
