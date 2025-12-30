@@ -118,7 +118,8 @@ export class GameService {
             questionIndex,
             question
         };
-        
+        // Очищаємо currentAnswerer, щоб після вибору питання там не було нікого
+        game.currentAnswerer = [];
         return game;
     }
 
@@ -132,7 +133,6 @@ export class GameService {
         
         if (game.selectionQueue.length > 0 && !game.currentSelector) {
             game.currentSelector = game.selectionQueue[0];
-            game.currentAnswerer.push(game.selectionQueue[0]);
         }
         
         return game;
