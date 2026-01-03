@@ -21,6 +21,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     return {
       ...gameState,
+      players: gameState.players?.filter(p => p.isActive) || [],
       package: {
         categories: gameState.package?.categories?.map(category => ({
           title: category.title,
