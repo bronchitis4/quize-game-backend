@@ -18,6 +18,7 @@ export class GameService {
             score: 0,
             isReady: false,
             isHost: true,
+            isActive: true,
         }
         const newGame: GameState = {
             roomId,
@@ -47,6 +48,18 @@ export class GameService {
             return null;
         }
 
+        // Check if a player with this name already exists (reconnecting player)
+        const existingPlayer = game.players.find(p => p.name === playerName);
+        
+        if (existingPlayer) {
+            // Player is reconnecting - update socket ID and reactivate
+            existingPlayer.id = playerId;
+            existingPlayer.isActive = true;
+            this.players.set(playerId, existingPlayer);
+            return game;
+        }
+
+        // New player
         const newPlayer: Player = {
             id: playerId,
             name: playerName,
@@ -54,6 +67,7 @@ export class GameService {
             avatarUrl: avatarUrl,
             isReady: false,
             isHost: false,
+            isActive: true,
         }
         game.players.push(newPlayer);
         this.players.set(playerId, newPlayer);
@@ -78,12 +92,15 @@ export class GameService {
         let disconnectedGame: GameState | null = null;
 
         this.games.forEach((game, gameId) => {
-            const playerIndex = game.players.findIndex(p => p.id === playerId);
-            if (playerIndex !== -1) {
-                game.players.splice(playerIndex, 1);
+            const player = game.players.find(p => p.id === playerId);
+            if (player) {
+                // Instead of removing the player, just deactivate them
+                player.isActive = false;
                 disconnectedGame = game;
 
-                if (game.players.length === 0) {
+                // Delete game only if all players are inactive
+                const allInactive = game.players.every(p => !p.isActive);
+                if (allInactive) {
                     this.games.delete(gameId);
                 }
             }
@@ -118,7 +135,7 @@ export class GameService {
             questionIndex,
             question
         };
-        // Очищаємо currentAnswerer, щоб після вибору питання там не було нікого
+        // Clear currentAnswerer so no one is set after question selection
         game.currentAnswerer = [];
         return game;
     }
