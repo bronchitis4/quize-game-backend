@@ -8,6 +8,7 @@ import { GameService } from './game.service';
     cors: {
       origin: '*',
     },
+    maxHttpBufferSize: 50 * 1024 * 1024,
   }
 )
 
