@@ -7,7 +7,6 @@ interface GameState {
     status: 'LOBBY' | 'PLAYING' | 'QUESTION_ACTIVE' | 'ANSWER' | 'FINISHED';
     players: Player[];
     package: GameData;
-    selectionQueue: string[];
     currentSelector?: string;
     currentAnswerer: string[];
     bannedAnswerers: string[]; // Players who answered incorrectly
