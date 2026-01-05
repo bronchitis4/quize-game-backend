@@ -8,6 +8,7 @@ import { Category } from './interfaces/question.interface';
 export class GameService {
     private games: Map<string, GameState> = new Map();
     private players = new Map<string, Player>();
+    private disconnectTimers = new Map<string, NodeJS.Timeout>();
 
     createGame(playerId: string, playerName: string, avatarUrl: string, password: string): { gameState: GameState, gameId: string } {
         const roomId = uuid();
@@ -26,7 +27,6 @@ export class GameService {
             players: [newPlayer],
             password: password,
             package: { categories: [] },
-            selectionQueue: [],
             currentSelector: undefined,
             currentAnswerer: [],
             bannedAnswerers: []
@@ -53,9 +53,37 @@ export class GameService {
         
         if (existingPlayer) {
             // Player is reconnecting - update socket ID and reactivate
+            const oldPlayerId = existingPlayer.id;
             existingPlayer.id = playerId;
             existingPlayer.isActive = true;
             this.players.set(playerId, existingPlayer);
+            
+            // Update currentSelector if this player was the selector
+            if (game.currentSelector === oldPlayerId) {
+                game.currentSelector = playerId;
+            }
+            
+            // Update currentAnswerer if this player was the answerer
+            const answererIndex = game.currentAnswerer.indexOf(oldPlayerId);
+            if (answererIndex !== -1) {
+                game.currentAnswerer[answererIndex] = playerId;
+            }
+            
+            // Cancel disconnect timer if it exists (for both selector and answerer)
+            const selectorTimerKey = `${gameId}_${existingPlayer.name}_selector`;
+            const selectorTimer = this.disconnectTimers.get(selectorTimerKey);
+            if (selectorTimer) {
+                clearTimeout(selectorTimer);
+                this.disconnectTimers.delete(selectorTimerKey);
+            }
+            
+            const answererTimerKey = `${gameId}_${existingPlayer.name}_answerer`;
+            const answererTimer = this.disconnectTimers.get(answererTimerKey);
+            if (answererTimer) {
+                clearTimeout(answererTimer);
+                this.disconnectTimers.delete(answererTimerKey);
+            }
+            
             return game;
         }
 
@@ -71,8 +99,6 @@ export class GameService {
         }
         game.players.push(newPlayer);
         this.players.set(playerId, newPlayer);
-
-        game.selectionQueue.push(playerId);
         
         if (!game.currentSelector) {
             game.currentSelector = playerId;
@@ -97,6 +123,77 @@ export class GameService {
                 // Instead of removing the player, just deactivate them
                 player.isActive = false;
                 disconnectedGame = game;
+
+                // If this player was currentSelector, give 2 seconds for reconnect
+                const currentSelectorPlayer = game.players.find(p => p.id === game.currentSelector);
+                if (currentSelectorPlayer && currentSelectorPlayer.name === player.name) {
+                    const timerKey = `${gameId}_${player.name}_selector`;
+                    
+                    // Clear previous timer if exists
+                    const existingTimer = this.disconnectTimers.get(timerKey);
+                    if (existingTimer) {
+                        clearTimeout(existingTimer);
+                    }
+                    
+                    // Set new timer
+                    const timer = setTimeout(() => {
+                        const currentGame = this.games.get(gameId);
+                        if (currentGame) {
+                            const selector = currentGame.players.find(p => p.id === currentGame.currentSelector);
+                            const disconnectedPlayer = currentGame.players.find(p => p.name === player.name);
+                            
+                            // Check if selector is still the disconnected player (by name) and still inactive
+                            if (selector && disconnectedPlayer && selector.name === disconnectedPlayer.name && !disconnectedPlayer.isActive) {
+                                // Player didn't return, select another one
+                                const activePlayers = currentGame.players.filter(p => p.isActive && p.name !== player.name);
+                                if (activePlayers.length > 0) {
+                                    // Select player with lowest score
+                                    const playerWithLowestScore = activePlayers.reduce((prev, curr) => 
+                                        prev.score < curr.score ? prev : curr
+                                    );
+                                    currentGame.currentSelector = playerWithLowestScore.id;
+                                } else {
+                                    currentGame.currentSelector = undefined;
+                                }
+                            }
+                        }
+                        this.disconnectTimers.delete(timerKey);
+                    }, 2000);
+                    
+                    this.disconnectTimers.set(timerKey, timer);
+                }
+
+                // If this player is in currentAnswerer, give 2 seconds for reconnect
+                const isCurrentAnswerer = game.currentAnswerer.length > 0 && 
+                    game.players.find(p => p.id === game.currentAnswerer[0])?.name === player.name;
+                
+                if (isCurrentAnswerer) {
+                    const timerKey = `${gameId}_${player.name}_answerer`;
+                    
+                    // Clear previous timer if exists
+                    const existingTimer = this.disconnectTimers.get(timerKey);
+                    if (existingTimer) {
+                        clearTimeout(existingTimer);
+                    }
+                    
+                    // Set new timer
+                    const timer = setTimeout(() => {
+                        const currentGame = this.games.get(gameId);
+                        if (currentGame && currentGame.currentAnswerer.length > 0) {
+                            const answerer = currentGame.players.find(p => p.id === currentGame.currentAnswerer[0]);
+                            const disconnectedPlayer = currentGame.players.find(p => p.name === player.name);
+                            
+                            // Check if answerer is still the disconnected player (by name) and still inactive
+                            if (answerer && disconnectedPlayer && answerer.name === disconnectedPlayer.name && !disconnectedPlayer.isActive) {
+                                // Player didn't return, clear currentAnswerer so others can buzz in
+                                currentGame.currentAnswerer = [];
+                            }
+                        }
+                        this.disconnectTimers.delete(timerKey);
+                    }, 2000);
+                    
+                    this.disconnectTimers.set(timerKey, timer);
+                }
 
                 // Delete game only if all players are inactive
                 const allInactive = game.players.every(p => !p.isActive);
@@ -135,7 +232,6 @@ export class GameService {
             questionIndex,
             question
         };
-        // Clear currentAnswerer so no one is set after question selection
         game.currentAnswerer = [];
         return game;
     }
@@ -148,8 +244,8 @@ export class GameService {
         
         game.status = 'PLAYING';
         
-        if (game.selectionQueue.length > 0 && !game.currentSelector) {
-            game.currentSelector = game.selectionQueue[0];
+        if (!game.currentSelector && game.players.length > 0) {
+            game.currentSelector = game.players[0].id;
         }
         
         return game;
@@ -203,6 +299,10 @@ export class GameService {
         if (!player) return null;
         player.score += game.currentQuestion ? game.currentQuestion.question.points : 0;
         game.status = 'ANSWER';
+        
+        // Player who answered correctly becomes the next selector
+        game.currentSelector = game.currentAnswerer[0];
+        
         return game;
     }
 
@@ -226,19 +326,9 @@ export class GameService {
             game.currentSelector = undefined;
             return game;
         }
-
-        if (game.selectionQueue.length > 0) {
-            const current = game.selectionQueue.shift();
-            if (current) {
-                game.selectionQueue.push(current);
-            }
-        }
-
-        game.currentSelector = game.selectionQueue[0];
         
         this.clearQuestion(gameId);
 
-        // Set currentAnswerer after clearing (if needed)
         if (game.currentSelector) {
             game.currentAnswerer.push(game.currentSelector);
         }
@@ -275,6 +365,18 @@ export class GameService {
         if (!game) return null;
         
         game.status = 'ANSWER';
+        
+        // const activePlayers = game.players.filter(p => p.isActive && !p.isHost);
+        // if (activePlayers.length > 0) {
+        //     const randomIndex = Math.floor(Math.random() * activePlayers.length);
+        //     const randomPlayer = activePlayers[randomIndex];
+        //     game.currentSelector = randomPlayer.id;
+        // }
+
+        const playerWithLowestScore = game.players.reduce((prev, curr) => prev.score < curr.score ? prev : curr);
+        game.currentSelector = playerWithLowestScore.id;
+    
+        
         return game;
     }
 }
